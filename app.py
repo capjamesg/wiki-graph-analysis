@@ -1,67 +1,124 @@
+import json
 import os
 import re
+from urllib.parse import unquote
 
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx
 
-WIKI_DIR = "./breakfastand.coffee/data/"
+WIKI_DIR = "./wiki/data/"
 
-# walk through the directory
-
-definitions = {}
-
-links = {}
 
 def link_refactor(text):
-    # return [[text]] -> text
-
     return re.findall(r"\[\[(.*?)\]\]", text)
 
-for root, dirs, files in os.walk(WIKI_DIR):
-    for file in files:
-        if file.endswith(".txt"):
-            with open(os.path.join(root, file), "r", encoding="utf-8") as f:
-                content = f.read()
 
-                # find line with <dfn>
-                for line in content.split("\n"):
-                    if "<dfn>" in line:
-                        # extract definition
-                        term = file.replace(".txt", "")
-                        definition = line.replace("<dfn>", "").replace("</dfn>", "")
-                        definitions[term] = definition
-                    
-                        break
+def get_definitions() -> dict:
+    """
+    Get all definitions from the wiki
 
-for d in definitions:
-    links[d] = []
+    :return: dict of definitions
+    :rtype: dict
+    """
+    definitions = {}
 
-    found_links_in_definition = link_refactor(definitions[d])
+    for root, _, files in os.walk(WIKI_DIR):
+        for file in files:
+            if file.endswith(".txt"):
+                with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                    content = f.read()
 
-    for l in found_links_in_definition:
-        if "|" in l:
-            l = l.split("|")[0]
+                    # find line with <dfn>
+                    for line in content.split("\n"):
+                        if "<dfn>" in line or "<b>" in line:
+                            # extract definition
+                            term = file.replace(".txt", "")
+                            definition = line.replace("<dfn>", "").replace("</dfn>", "")
+                            definitions[term.lower()] = definition
 
-        l = l.replace("_", " ")
+                            break
 
-        links[d].append(l)
-        
-# create graph
-G = nx.DiGraph()
+    return definitions
 
-for d in definitions:
-    G.add_node(d)
 
-    for l in links[d]:
-        G.add_edge(d, l)
+def create_link_graph(definitions) -> dict:
+    links = {}
 
-# draw graph
-nx.draw(G, with_labels=True, font_weight='bold')
+    found_links = 0
 
-# plt.show()
+    for d in definitions:
+        d = d.lower()
 
-# dump as json
-import json
+        links[d] = []
 
-with open("graph.json", "w") as f:
-    json.dump(nx.node_link_data(G), f)
+        found_links_in_definition = link_refactor(definitions[d])
+
+        found_links_in_definition = [l.lower() for l in found_links_in_definition]
+
+        for l in found_links_in_definition:
+            if "|" in l:
+                l = l.split("|")[0]
+
+            l = l.replace("_", " ")
+
+            links[l] = links.get(l, []) + [d]
+
+            found_links += 1
+
+    return links, found_links
+
+
+def create_graphviz_graph(definitions, links) -> dict:
+    visualizations = {}
+
+    for d in definitions:
+        G = nx.DiGraph()
+
+        # decode url
+        term = unquote(d).lower()
+
+        if links.get(term) is None:
+            continue
+
+        G.add_node(term)
+
+        for l in links[term]:
+            print(l)
+            G.add_node(l)
+            G.add_edge(term, l)
+
+            for l2 in links.get(l, []):
+                G.add_node(l2)
+                G.add_edge(l, l2)
+
+                for l3 in links.get(l2, []):
+                    G.add_node(l3)
+                    G.add_edge(l2, l3)
+
+        graphviz_graph = nx.nx_agraph.to_agraph(G)
+
+        # left to right instead of top to bottom
+        graphviz_graph.graph_attr.update(rankdir="LR")
+
+        visualizations[d] = graphviz_graph.to_string()
+
+    with open("graph.json", "w") as f:
+        json.dump(nx.node_link_data(G), f)
+
+    return visualizations
+
+
+def main():
+    definitions = get_definitions()
+
+    links, found_links = create_link_graph(definitions)
+
+    print("Found links:", found_links)
+
+    visualizations = create_graphviz_graph(definitions, links)
+
+    with open("visualizations.json", "w") as f:
+        json.dump(visualizations, f)
+
+if __name__ == "__main__":
+    main()
