@@ -4,7 +4,7 @@ This repository contains the code used to process data for [IndieWeb Wiki Concep
 
 ## License
 
-This project is licensed under an [MIT 0 license](LICENSE).
+This project is licensed under a [Zero-Clause BSD License](LICENSE).
 
 ## Contributors
 
